@@ -8,131 +8,68 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-15
 
     steps:
-      - name: Checkout source
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Select Xcode
+      - name: Use Xcode 16
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '16'
 
       - name: Show Xcode version
         run: xcodebuild -version
 
-      - name: Inspect repository
-        run: |
-          pwd
-          ls -la
-          echo "---- important files ----"
-          find . -maxdepth 5 \( -name "*.xcworkspace" -o -name "*.xcodeproj" -o -name "Package.swift" -o -name "Package.resolved" -o -name "Podfile" \) | sort
-
-      - name: Locate workspace or project
+      - name: Locate workspace/project
         id: locate
         shell: bash
         run: |
-          WORKSPACE=$(find . -type d -name "*.xcworkspace" ! -path "*/Pods/*" | sort | head -n 1)
-          PROJECT=$(find . -type d -name "*.xcodeproj" ! -path "*/Pods/*" | sort | head -n 1)
+          WORKSPACE=$(find . -maxdepth 3 -type d -name "*.xcworkspace" ! -path "*/Pods/*" | sort | head -n 1)
+          PROJECT=$(find . -maxdepth 3 -type d -name "*.xcodeproj" ! -path "*/Pods/*" | sort | head -n 1)
 
-          if [ -n "$WORKSPACE" ]; then
-            TYPE="workspace"
-            CONTAINER="$WORKSPACE"
-          elif [ -n "$PROJECT" ]; then
-            TYPE="project"
-            CONTAINER="$PROJECT"
-          else
-            echo "No .xcworkspace or .xcodeproj found."
-            exit 1
-          fi
+          echo "workspace=$WORKSPACE" >> "$GITHUB_OUTPUT"
+          echo "project=$PROJECT" >> "$GITHUB_OUTPUT"
 
-          echo "TYPE=$TYPE"
-          echo "CONTAINER=$CONTAINER"
+          echo "WORKSPACE=$WORKSPACE"
+          echo "PROJECT=$PROJECT"
 
-          echo "type=$TYPE" >> "$GITHUB_OUTPUT"
-          echo "container=$CONTAINER" >> "$GITHUB_OUTPUT"
+          test -n "$WORKSPACE" -o -n "$PROJECT"
 
-      - name: List schemes / targets
-        id: discover
+      - name: List schemes
         shell: bash
         run: |
-          if [ "${{ steps.locate.outputs.type }}" = "workspace" ]; then
-            xcodebuild -list -json -workspace "${{ steps.locate.outputs.container }}" > xcode-list.json
+          if [ -n "${{ steps.locate.outputs.workspace }}" ]; then
+            xcodebuild -list -workspace "${{ steps.locate.outputs.workspace }}"
           else
-            xcodebuild -list -json -project "${{ steps.locate.outputs.container }}" > xcode-list.json
+            xcodebuild -list -project "${{ steps.locate.outputs.project }}"
           fi
 
-          echo "---- xcodebuild -list -json ----"
-          cat xcode-list.json
-
-          python3 <<'PY'
-          import json, os, re
-
-          with open("xcode-list.json", "r", encoding="utf-8") as f:
-              data = json.load(f)
-
-          root = data.get("project") or data.get("workspace") or {}
-          schemes = root.get("schemes") or []
-          targets = root.get("targets") or []
-
-          def pick(items):
-              if not items:
-                  return ""
-              patterns = [
-                  r"^uPic$",
-                  r"upic",
-                  r"pic",
-                  r".*",
-              ]
-              for p in patterns:
-                  for item in items:
-                      if re.search(p, item, re.I):
-                          return item
-              return items[0]
-
-          scheme = pick(schemes)
-          target = pick(targets)
-
-          print("Chosen scheme:", scheme or "<none>")
-          print("Chosen target:", target or "<none>")
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
-              out.write(f"scheme={scheme}\n")
-              out.write(f"target={target}\n")
-          PY
-
-      - name: Resolve Swift package dependencies
+      - name: Resolve Swift packages
         shell: bash
         run: |
-          if [ "${{ steps.locate.outputs.type }}" = "workspace" ]; then
-            if [ -z "${{ steps.discover.outputs.scheme }}" ]; then
-              echo "Workspace found, but no shared scheme found."
-              exit 1
-            fi
-
+          if [ -n "${{ steps.locate.outputs.workspace }}" ]; then
             xcodebuild -resolvePackageDependencies \
-              -workspace "${{ steps.locate.outputs.container }}" \
-              -scheme "${{ steps.discover.outputs.scheme }}"
+              -workspace "${{ steps.locate.outputs.workspace }}" \
+              -scheme "uPic(Release)"
           else
-            if [ -n "${{ steps.discover.outputs.scheme }}" ]; then
-              xcodebuild -resolvePackageDependencies \
-                -project "${{ steps.locate.outputs.container }}" \
-                -scheme "${{ steps.discover.outputs.scheme }}"
-            else
-              xcodebuild -resolvePackageDependencies \
-                -project "${{ steps.locate.outputs.container }}"
-            fi
+            xcodebuild -resolvePackageDependencies \
+              -project "${{ steps.locate.outputs.project }}" \
+              -scheme "uPic(Release)"
           fi
 
-      - name: Build app
+      - name: Build
         shell: bash
         run: |
+          set -o pipefail
+
           COMMON_ARGS=(
+            -scheme "uPic(Release)"
             -configuration Release
-            -destination "platform=macOS"
+            -destination "generic/platform=macOS"
             -derivedDataPath build
             CODE_SIGN_STYLE=Manual
             CODE_SIGN_IDENTITY=""
@@ -141,61 +78,59 @@ jobs:
             DEVELOPMENT_TEAM=""
           )
 
-          if [ "${{ steps.locate.outputs.type }}" = "workspace" ]; then
-            if [ -z "${{ steps.discover.outputs.scheme }}" ]; then
-              echo "Workspace build requires a shared scheme, but none was found."
-              exit 1
-            fi
-
+          if [ -n "${{ steps.locate.outputs.workspace }}" ]; then
             xcodebuild \
-              -workspace "${{ steps.locate.outputs.container }}" \
-              -scheme "${{ steps.discover.outputs.scheme }}" \
+              -workspace "${{ steps.locate.outputs.workspace }}" \
               "${COMMON_ARGS[@]}" \
-              clean build
+              clean build 2>&1 | tee build.log
           else
-            if [ -n "${{ steps.discover.outputs.scheme }}" ]; then
-              xcodebuild \
-                -project "${{ steps.locate.outputs.container }}" \
-                -scheme "${{ steps.discover.outputs.scheme }}" \
-                "${COMMON_ARGS[@]}" \
-                clean build
-            elif [ -n "${{ steps.discover.outputs.target }}" ]; then
-              xcodebuild \
-                -project "${{ steps.locate.outputs.container }}" \
-                -target "${{ steps.discover.outputs.target }}" \
-                "${COMMON_ARGS[@]}" \
-                clean build
-            else
-              echo "No scheme or target found to build."
-              exit 1
-            fi
+            xcodebuild \
+              -project "${{ steps.locate.outputs.project }}" \
+              "${COMMON_ARGS[@]}" \
+              clean build 2>&1 | tee build.log
           fi
 
-      - name: Find and zip .app
-        id: package
+          BUILD_EXIT=${PIPESTATUS[0]}
+
+          if [ $BUILD_EXIT -ne 0 ]; then
+            echo "================ ERROR LINES ================"
+            grep -n " error: " build.log || true
+            echo "================ FAIL LINES ================"
+            grep -n " failed" build.log || true
+            echo "================ LAST 200 LINES ================"
+            tail -n 200 build.log || true
+            exit $BUILD_EXIT
+          fi
+
+      - name: Find app
+        id: app
         shell: bash
         run: |
           APP_PATH=$(find build/Build/Products -type d -name "*.app" | sort | head -n 1)
 
           if [ -z "$APP_PATH" ]; then
-            echo "No .app found."
-            echo "---- build output ----"
+            echo "No .app found"
             find build -maxdepth 6 | sort || true
             exit 1
           fi
 
           ZIP_PATH="${APP_PATH}.zip"
-
-          echo "APP_PATH=$APP_PATH"
-          echo "ZIP_PATH=$ZIP_PATH"
-
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
 
+          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
           echo "zip_path=$ZIP_PATH" >> "$GITHUB_OUTPUT"
 
-      - name: Upload artifact
+      - name: Upload app artifact
         uses: actions/upload-artifact@v4
         with:
           name: uPic-app
-          path: ${{ steps.package.outputs.zip_path }}
+          path: ${{ steps.app.outputs.zip_path }}
           if-no-files-found: error
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
