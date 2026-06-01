@@ -3,7 +3,7 @@ name: Build uPic
 on:
   workflow_dispatch:
   push:
-    branches: [ master, main ]
+    branches: [ main, master ]
   pull_request:
 
 jobs:
@@ -14,26 +14,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show Xcode version
-        run: xcodebuild -version
-
-      - name: Show Ruby version
-        run: ruby -v
+      - name: Inspect repo
+        run: |
+          pwd
+          ls -la
+          find . -maxdepth 3 \( -name Podfile -o -name "*.xcodeproj" -o -name "*.xcworkspace" \) | sort
 
       - name: Install CocoaPods
         run: |
           sudo gem install cocoapods
+          pod --version
 
       - name: Install Pods
+        working-directory: ./uPic
         run: |
           pod install --repo-update --verbose
 
-      - name: List workspace and schemes
+      - name: List schemes
+        working-directory: ./uPic
         run: |
-          ls -la
           xcodebuild -list -workspace uPic.xcworkspace
 
-      - name: Build uPic
+      - name: Build
+        working-directory: ./uPic
         run: |
           xcodebuild \
             -workspace uPic.xcworkspace \
@@ -44,6 +47,7 @@ jobs:
             clean build
 
       - name: Package app
+        working-directory: ./uPic
         run: |
           cd build/Build/Products/Release
           zip -r uPic.app.zip uPic.app
@@ -52,4 +56,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: uPic-app
-          path: build/Build/Products/Release/uPic.app.zip
+          path: uPic/build/Build/Products/Release/uPic.app.zip
