@@ -14,32 +14,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Inspect repo
+      - name: Inspect files
         run: |
           pwd
           ls -la
-          find . -maxdepth 3 \( -name Podfile -o -name "*.xcodeproj" -o -name "*.xcworkspace" \) | sort
+          find . -maxdepth 3 \( -name "Podfile" -o -name "*.xcodeproj" -o -name "*.xcworkspace" -o -name "Package.resolved" -o -name "Package.swift" \) | sort
 
-      - name: Install CocoaPods
-        run: |
-          sudo gem install cocoapods
-          pod --version
+      - name: Show Xcode version
+        run: xcodebuild -version
 
-      - name: Install Pods
-        working-directory: ./uPic
+      - name: Resolve Swift packages
         run: |
-          pod install --repo-update --verbose
+          xcodebuild -resolvePackageDependencies \
+            -project uPic.xcodeproj
 
       - name: List schemes
-        working-directory: ./uPic
         run: |
-          xcodebuild -list -workspace uPic.xcworkspace
+          xcodebuild -list -project uPic.xcodeproj
 
       - name: Build
-        working-directory: ./uPic
         run: |
           xcodebuild \
-            -workspace uPic.xcworkspace \
+            -project uPic.xcodeproj \
             -scheme uPic \
             -configuration Release \
             -derivedDataPath build \
@@ -47,7 +43,6 @@ jobs:
             clean build
 
       - name: Package app
-        working-directory: ./uPic
         run: |
           cd build/Build/Products/Release
           zip -r uPic.app.zip uPic.app
@@ -56,4 +51,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: uPic-app
-          path: uPic/build/Build/Products/Release/uPic.app.zip
+          path: build/Build/Products/Release/uPic.app.zip
