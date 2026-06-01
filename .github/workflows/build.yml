@@ -11,10 +11,14 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 编译 uPic（使用 target）
+      - name: 安装 CocoaPods 依赖
         run: |
-          xcodebuild -project uPic.xcodeproj \
-            -target uPic \
+          pod install --verbose
+
+      - name: 编译 uPic（使用 workspace）
+        run: |
+          xcodebuild -workspace uPic.xcworkspace \
+            -scheme uPic \
             -configuration Release \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
