@@ -11,16 +11,15 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: 编译 uPic
+      - name: 编译 uPic（使用 target）
         run: |
           xcodebuild -project uPic.xcodeproj \
-            -scheme uPic \
+            -target uPic \
             -configuration Release \
             -derivedDataPath ./DerivedData \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            OTHER_CODE_SIGN_FLAGS="--timestamp=none"
+            CODE_SIGNING_ALLOWED=NO
 
       - name: 打包应用
         run: |
