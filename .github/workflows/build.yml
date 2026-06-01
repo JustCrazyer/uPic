@@ -1,39 +1,55 @@
-name: 构建 uPic（无签名）
+name: Build uPic
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ master, main ]
+  pull_request:
 
 jobs:
   build:
     runs-on: macos-latest
 
     steps:
-      - name: 检出代码
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 安装 CocoaPods 依赖
-        run: |
-          pod install --verbose
+      - name: Show Xcode version
+        run: xcodebuild -version
 
-      - name: 编译 uPic（使用 workspace）
+      - name: Show Ruby version
+        run: ruby -v
+
+      - name: Install CocoaPods
         run: |
-          xcodebuild -workspace uPic.xcworkspace \
+          sudo gem install cocoapods
+
+      - name: Install Pods
+        run: |
+          pod install --repo-update --verbose
+
+      - name: List workspace and schemes
+        run: |
+          ls -la
+          xcodebuild -list -workspace uPic.xcworkspace
+
+      - name: Build uPic
+        run: |
+          xcodebuild \
+            -workspace uPic.xcworkspace \
             -scheme uPic \
             -configuration Release \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            clean build
 
-      - name: 打包应用
+      - name: Package app
         run: |
-          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "uPic.app" -type d | head -1)
-          mkdir -p output
-          cp -R "$APP_PATH" output/
-          cd output
-          zip -r ../uPic.zip uPic.app
+          cd build/Build/Products/Release
+          zip -r uPic.app.zip uPic.app
 
-      - name: 上传产物
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: uPic-未签名
-          path: uPic.zip
+          name: uPic-app
+          path: build/Build/Products/Release/uPic.app.zip
