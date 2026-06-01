@@ -1,0 +1,37 @@
+name: 构建 uPic（无签名）
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 编译 uPic
+        run: |
+          xcodebuild -project uPic.xcodeproj \
+            -scheme uPic \
+            -configuration Release \
+            -derivedDataPath ./DerivedData \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            OTHER_CODE_SIGN_FLAGS="--timestamp=none"
+
+      - name: 打包应用
+        run: |
+          APP_PATH=$(find ./DerivedData/Build/Products/Release -name "uPic.app" -type d | head -1)
+          mkdir -p output
+          cp -R "$APP_PATH" output/
+          cd output
+          zip -r ../uPic.zip uPic.app
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: uPic-未签名
+          path: uPic.zip
